@@ -1,9 +1,13 @@
 # quorum-docker-Nnodes
 
 ## Modified by me
+  * Add support for Tessera (replacing Constellation).
+  * Fixed bugs in setup.sh for Istanbul BFT.
+  * Added option for deterministic Ethereum account generation (for testing purpose).
+
+## Modified by @pccr10001
   * Add support for Quorum 2.3.0.
-  * Add support for Clique consensus engine.
-  * Add support for Istanbul BFT consensus engine.
+  * Add support for Clique and IBFT consensus engine.
   * Add support for Multi-Cluster.
 
 ## Intro
@@ -28,8 +32,6 @@ In the top level directory:
     
 The first time will take a while, but after some caching it gets much quicker for any minor updates.
 
-I've got the size of the final image down to ~~391MB~~ 308MB from over 890MB. It's likely possible to improve much further on that.  Alpine Linux is a candidate minimal base image, but there are challenges with the Haskell dependencies; there's an [example here](https://github.com/jpmorganchase/constellation/blob/master/build-linux-static.dockerfile).
-
 ## Running
 
 Change to the *Nnodes/* directory. Edit the `ips` variable in *config.sh* to list two or more IP addresses on the Docker network that will host nodes:
@@ -45,13 +47,10 @@ Change to the *Nnodes/* directory. Edit the `ips` variable in *config.sh* to lis
     # Signer nodes for Clique and IBFT
     signer_nodes=7
     
-    # Use docker host network for RLP connection.
-    use_host_net=false
-    
     # auto start
     auto_start_containers=true
     
-The IP addresses are needed for Constellation to work. Now run,
+The IP addresses are needed for Tessera to work. Now run,
 
     ./setup.sh [raft]
     ./setup.sh clique    # For Clique
@@ -91,76 +90,6 @@ To show all Geth node logs:
 
     ./cmd.sh logs
 
-### Making transactions
-
-We will demo the following, from Node 1's console.
-
-1. Create a public contract (visible to all nodes)
-
-2. Create a private contract with Node 2
-
-3. Send a private transaction to update the contract state with node 2.
-
-This is based on using the provided example *setup.sh* file as-is (three nodes).
-
-#### Node 1 geth console
-
-    > var abi = [{"constant":true,"inputs":[],"name":"storedData","outputs":[{"name":"","type":"uint256"}],"payable":false,"type":"function"},{"constant":false,"inputs":[{"name":"x","type":"uint256"}],"name":"set","outputs":[],"payable":false,"type":"function"},{"constant":true,"inputs":[],"name":"get","outputs":[{"name":"retVal","type":"uint256"}],"payable":false,"type":"function"},{"inputs":[{"name":"initVal","type":"uint256"}],"type":"constructor"}];
-    undefined
-
-    > loadScript("contract_pub.js")
-    Contract transaction send: TransactionHash: 0x0e7ff9b609c0ba3a11de9cd4f51389c29dceacbac2f91e294346df86792d8d8f waiting to be mined...
-    true
-    Contract mined! Address: 0x1932c48b2bf8102ba33b4a6b545c32236e342f34
-    [object Object]
-
-    > var public = eth.contract(abi).at("0x1932c48b2bf8102ba33b4a6b545c32236e342f34")
-    undefined
-    > public.get()
-    42
-
-    > loadScript("contract_pri.js")
-    Contract transaction send: TransactionHash: 0xa9b969f90c1144a49b4ab4abb5e2bfebae02ab122cdc22ca9bc564a740e40bcd waiting to be mined...
-    true
-    Contract mined! Address: 0x1349f3e1b8d71effb47b840594ff27da7e603d17
-    [object Object]
-
-    > var private = eth.contract(abi).at("0x1349f3e1b8d71effb47b840594ff27da7e603d17")
-    undefined
-    > private.get()
-    42
-    > private.set(65535, {privateFor: ["QfeDAys9MPDs2XHExtc84jKGHxZg/aj52DTh0vtA3Xc="]})
-    "0x0dc9c0b85b4c4e5f1e3ba2014b5f628f5153bc2588741a69626eb5a40d2b30d6"
-    > private.get()
-    65535
-
-#### Node 2 geth console
-
-    > var abi = [{"constant":true,"inputs":[],"name":"storedData","outputs":[{"name":"","type":"uint256"}],"payable":false,"type":"function"},{"constant":false,"inputs":[{"name":"x","type":"uint256"}],"name":"set","outputs":[],"payable":false,"type":"function"},{"constant":true,"inputs":[],"name":"get","outputs":[{"name":"retVal","type":"uint256"}],"payable":false,"type":"function"},{"inputs":[{"name":"initVal","type":"uint256"}],"type":"constructor"}];
-    undefined
-    > var public = eth.contract(abi).at("0x1932c48b2bf8102ba33b4a6b545c32236e342f34")
-    undefined
-    > var private = eth.contract(abi).at("0x1349f3e1b8d71effb47b840594ff27da7e603d17")
-    undefined
-    > public.get()
-    42
-    > private.get()
-    65535
-
-#### Node 3 geth console
-
-    > var abi = [{"constant":true,"inputs":[],"name":"storedData","outputs":[{"name":"","type":"uint256"}],"payable":false,"type":"function"},{"constant":false,"inputs":[{"name":"x","type":"uint256"}],"name":"set","outputs":[],"payable":false,"type":"function"},{"constant":true,"inputs":[],"name":"get","outputs":[{"name":"retVal","type":"uint256"}],"payable":false,"type":"function"},{"inputs":[{"name":"initVal","type":"uint256"}],"type":"constructor"}];
-    undefined
-    > var public = eth.contract(abi).at("0x1932c48b2bf8102ba33b4a6b545c32236e342f34")
-    undefined
-    > var private = eth.contract(abi).at("0x1349f3e1b8d71effb47b840594ff27da7e603d17")
-    undefined
-    > public.get()
-    42
-    > private.get()
-    0
-
-So, Node 2 is able to see both contracts and the private transaction. Node 3 can see only the public contract and its state.
 
 ## Notes
 
@@ -169,7 +98,7 @@ The RPC port for each container is mapped to *localhost* starting from port 2200
     curl -X POST --data '{"jsonrpc":"2.0","method":"admin_peers","id":1}' 172.13.0.3:8545
     curl -X POST --data '{"jsonrpc":"2.0","method":"admin_peers","id":1}' localhost:22002
 
-You can see the log files for the nodes in *qdata_N/logs/geth.log* and *qdata_N/logs/constellation.log*.  This is useful when things go wrong!
+You can see the log files for the nodes in *qdata_N/logs/geth.log* and *qdata_N/logs/tessera.log*.  This is useful when things go wrong!
 
 This example uses only the Raft consensus mechanism.
 
