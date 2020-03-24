@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #
 # Create all the necessary scripts, keys, configurations etc. to run
 # a cluster of N Quorum nodes with Raft consensus.
@@ -9,13 +8,11 @@
 #
 # Run the cluster with "docker-compose up -d"
 #
-# Run a console on Node N with "geth attach qdata_N/dd/geth.ipc"
-# (assumes Geth is installed on the host.)
-#
-# Geth and Constellation logfiles for Node N will be in qdata_N/logs/
+# Geth and Tessera logfiles for Node N will be in qdata_N/logs/
 #
 
 # TODO: check file access permissions, especially for keys.
+
 
 #### Color Control Codes ###############################################
 
@@ -25,6 +22,7 @@ COLOR_RED='\e[1;31m';
 COLOR_YELLOW='\e[1;33m';
 COLOR_BLUE='\e[1;36m';
 COLOR_WHITE='\e[1;37m';
+
 
 #### Configuration options #############################################
 
@@ -62,7 +60,7 @@ fi
 
 if [[ ! "${consensus}" = "raft" &&  "$signer_nodes" -lt "4" ]]
 then
-    echo "ERROR: There must be more than four signer nodes in IBFT and Clique consensus ."
+    echo "ERROR: There must be at least four signer nodes in IBFT and Clique consensus ."
     exit 1
 fi
 
@@ -86,6 +84,7 @@ i=0
 n=0
 
 # Fill IP list
+# The loop starts from i=2 and stops to i=(total_nodes+1)
 for i in $(seq 2 $((total_nodes+1))); do
     ips+=("$ip_prefix$i") 
     if [[ ! "${consensus}" = "raft" && "$n" -ge "$((total_nodes-signer_nodes))" ]]; then
@@ -101,6 +100,7 @@ fi
 
 echo -e ".${COLOR_RESET}"
 
+# Create directories
 n=1
 for ip in ${ips[*]}
 do
@@ -126,22 +126,15 @@ echo "[" > static-nodes.json
 n=1
 for ip in ${ips[*]}
 do
-    
-    if [ "$use_host_net" = "true" ]; then
-        ip=$interface_ip
-        rpc_port=$((n+rpc_start_port))
-        raft_port=$((n+raft_start_port))
-        rlp_port=$((n+node_start_port))
-	ws_port=$((n+node_ws_port))
-    fi
-
     qd=qdata_$n
+
+    # Comma separator for IBFT nodekeys list
     sep=`[[ $n -lt $total_nodes ]] && echo ","`
 
     # Generate the node's Enode and key
     nkey=`docker run --net=host --rm -u $uid:$gid -v $pwd/$qd:/qdata $image sh -c "/usr/local/bin/bootnode -genkey /qdata/dd/nodekey -writeaddress; cat /qdata/dd/nodekey"`
 
-    # IBFT use nodekey to authorize nodes.
+    # IBFT uses nodekeys to authorize nodes.
     if [ "$consensus" = "istanbul" ]; then
         nodekeys="${nodekeys}${nkey}${sep}"
     fi
@@ -150,6 +143,7 @@ do
     
     # Add the enode to static-nodes.json
     echo '  "enode://'$enode'@'$ip':'$rlp_port'?raftport='$raft_port'"'$sep >> static-nodes.json
+    
     bootnode="${bootnode}enode:\\/\\/${enode}@${ip}:${rlp_port}$sep"
 
     master_enodes="${master_enodes}${enode}\n"
@@ -164,6 +158,7 @@ master_enodes="$master_enodes)"
 echo "]" >> static-nodes.json
 
 echo -e "\n$master_enodes" >> .current_config
+
 
 #### Create accounts, keys and genesis.json file #######################
 
@@ -192,7 +187,6 @@ EOF
 fi
 
 n=1
-
 signers=""
 for ip in ${ips[*]}
 do
@@ -200,26 +194,27 @@ do
 
     # Generate an Ether account for the node
     touch $qd/passwords.txt
-    account=`docker run --net=host --rm -u $uid:$gid -v $pwd/$qd:/qdata $image /usr/local/bin/geth --datadir=/qdata/dd --password /qdata/passwords.txt account new 2>/dev/null | cut -c 11-50`
+    account=`docker run -u $uid:$gid -v $pwd/$qd:/qdata $image /usr/local/bin/geth --datadir=/qdata/dd --password /qdata/passwords.txt account new | cut -c 11-50`
     printf "  - Account ${COLOR_YELLOW}0x${account}${COLOR_RESET} created on ${COLOR_GREEN}Node #${n}${COLOR_RESET}."
 
-    sep=`[[ $n -lt $total_nodes ]] && echo ","`
-
+    # If current IP matches (regex) the signer_ip, then add the current created account to the signers account list
     if [[ " ${signer_ips[@]} " =~ " $ip " ]]; then
         if [ "${consensus}" = "clique" ]; then
             signers="${account}${signers}"
         fi
-	printf " ${COLOR_RED}(Signer)${COLOR_RESET}"
+	      printf " ${COLOR_RED}(Signer)${COLOR_RESET}"
     fi
 
-    printf "\n"    
+    printf "\n" 
 
     # Add the account to the genesis block so it has some Ether at start-up
+    sep=`[[ $n -lt $total_nodes ]] && echo ","`
+    
     if [ "$alloc_ether" = "true" ]; then
-        cat >> genesis.json <<EOF
-    "${account}": {
-      "balance": "1000000000000000000000000000"
-    }${sep}
+      cat >> genesis.json <<EOF
+      "${account}": {
+        "balance": "1000000000000000000000000000"
+      }${sep}
 EOF
     fi
 
@@ -237,7 +232,7 @@ cat >> genesis.json <<EOF
 EOF
 
 cat >> genesis.json <<EOF
-  "config":{
+   "config":{
     "chainId": 10,
     "eip150Block": 1,
     "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -247,6 +242,7 @@ cat >> genesis.json <<EOF
     "constantinopleBlock": 1,
 EOF
 
+# Clique
 if [ "${consensus}" = "clique" ]; then
     cat >> genesis.json <<EOF
     "isQuorum": true,
@@ -259,12 +255,15 @@ if [ "${consensus}" = "clique" ]; then
   "mixhash": "0x0000000000000000000000000000000000000000000000000000000000000000"
 }
 EOF
+
+#IBFT
 elif [ "${consensus}" = "istanbul" ]; then
     cat >> genesis.json <<EOF
     "isQuorum": true,
     "istanbul": {
       "epoch": 30000,
-      "policy": 0
+      "policy": 0,
+      "ceil2Nby3Block": 0
     }
   },
   "gasUsed": "0x0",
@@ -273,7 +272,9 @@ elif [ "${consensus}" = "istanbul" ]; then
   "mixHash": "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365"
 }
 EOF
-else # Raft
+
+# Raft
+else 
     cat >> genesis.json <<EOF
     "isQuorum": true
   },
@@ -283,74 +284,56 @@ else # Raft
 EOF
 fi
 
-#### Make node list for tm.conf ########################################
-
-nodelist=
-n=1
-for ip in ${ips[*]}
-do
-    sep=`[[ $ip != ${ips[0]} ]] && echo ","`
-    if [ "$use_host_net" = "true" ]; then
-        ip=$interface_ip
-        constellation_port=$((constellation_start_port+n))
-    fi
-    nodelist=${nodelist}${sep}'"http://'${ip}':'${constellation_port}'/"'
-    let n++
-done
-
 
 #### Complete each node's configuration ################################
 
-echo -e "${COLOR_WHITE}[4] Creating Quorum keys and finishing configuration.${COLOR_RESET}"
+echo -e "${COLOR_WHITE}[4] Creating Tessera keys and config.json - finishing configuration.${COLOR_RESET}"
+
+#### Add peers to config.json ########################################
+
+n=1
+for ip in ${ips[*]}
+do
+    qd=qdata_$n
+    
+    sep=`[[ $n > 1 ]] && echo ","`
+    myline1='"url": "http://'
+    myline1+="$ip:$tessera_port"
+    myline1+='"'
+    #myline1+=$sep
+
+echo "    Adding peers to Tessera config file:"
+echo $myline1
+    sed -i "/peer/ a {\n\t\t$myline1\n\t}$sep" utils/config.json
+    let n++
+done
+
 
 n=1
 for ip in ${ips[*]}
 do
     qd=qdata_$n
 
-
-    if [ "$use_host_net" = "true" ]; then
-        rpc_port=$((n+rpc_start_port))
-        raft_port=$((n+raft_start_port))
-        rlp_port=$((n+node_start_port))
-	ws_port=$((n+ws_start_port))
-
-        if [[ "$use_constellation" == "true" ]]; then
-            constellation_port=$((constellation_start_port+n))
-
-            cat templates/tm.conf \
-                | sed s/_NODEIP_/$interface_ip/g \
-                | sed s%_NODELIST_%$nodelist%g \
-                | sed s%9000%$constellation_port%g \
-                      > $qd/tm.conf
-        fi
-    else
-        if [[ "$use_constellation" == "true" ]]; then
-            cat templates/tm.conf \
-                | sed s/_NODEIP_/${ips[$((n-1))]}/g \
-                | sed s%_NODELIST_%$nodelist%g \
-                      > $qd/tm.conf
-        fi
-    fi
-
-    if [[ "$use_constellation" == "true" ]]; then
-        # Generate Quorum-related keys (used by Constellation)
-        docker run --rm --net=host -u $uid:$gid -v $pwd/$qd:/qdata $image /usr/local/bin/constellation-node --generatekeys=/qdata/keys/tm < /dev/null > /dev/null
-        echo -e "  - ${COLOR_GREEN}Node #$n${COLOR_RESET} public key for constellation: ${COLOR_YELLOW}`cat $qd/keys/tm.pub`${COLOR_RESET}"
-    fi
+    cat utils/config.json | sed s/_NODEIP_/${ips[$((n-1))]}/g > $qd/config.json
 
     cp genesis.json $qd/genesis.json
     cp static-nodes.json $qd/dd/static-nodes.json
 
-    cat templates/start-node.sh \
+    # Generate Quorum-related keys (used by Tessera)
+    docker run -u $uid:$gid -v $pwd/$qd:/qdata $image java -jar /tessera/tessera-app.jar -keygen -filename /qdata/keys/tm < /dev/null > /dev/null
+    echo -e "  - ${COLOR_GREEN}Node #$n${COLOR_RESET} public key for Tessera: ${COLOR_YELLOW}`cat $qd/keys/tm.pub`${COLOR_RESET}"
+
+
+    cat utils/start-node.sh \
         | sed s/{raft_port}/${raft_port}/g \
         | sed s/{rpc_port}/${rpc_port}/g \
         | sed s/{rlp_port}/${rlp_port}/g \
-	| sed s/{ws_port}/${ws_port}/g \
+	      | sed s/{ws_port}/${ws_port}/g \
         | sed "s/{node_name}/${node_name_prefix}-$n/g" \
         | sed "s/{bootnode}/--bootnodes ${bootnode}/g" \
             > $qd/start-node.sh
-    
+
+    #cp utils/start-node.sh $qd/start-node.sh
     chmod 755 $qd/start-node.sh
 
     #Do fullsync and mining on clique signer  
@@ -360,35 +343,31 @@ do
 
 	    if [[ " ${signer_ips[@]} " =~ " $ip " ]]; then
             sed -i 's/full/full --mine/g' $qd/start-node.sh    
-        fi
+      fi
 
     elif [ "${consensus}" = "istanbul" ]; then
 
-        #Block period must > 1 in IBFT
-        [[ $block_period < 1 ]] && block_period=1
+      #Block period must > 1 in IBFT
+      [[ $block_period < 1 ]] && block_period=1
 
-	    sed -i "s/--raft/--istanbul.blockperiod ${block_period} --syncmode full /g" $qd/start-node.sh
+	    sed -i "s/--raft /--istanbul.blockperiod ${block_period} --syncmode full /g" $qd/start-node.sh
 
 	    if [[ " ${signer_ips[@]} " =~ " $ip " ]]; then
             sed -i 's/full/full --mine --minerthreads 1 /g' $qd/start-node.sh
-        fi
-    fi
+      fi
 
-    if [[ "$use_constellation" != "true" ]]; then
-        sed -i 's/nohup \/usr\/local\/bin\/constellation-node/#nohup \/usr\/local\/bin\/constellation-node/g' $qd/start-node.sh
-        sed -i 's/PRIVATE_CONFIG=$TMCONF//g' $qd/start-node.sh
     fi
 
     let n++
 done
 
-rm -rf static-nodes.json
+rm -rf genesis.json static-nodes.json
 
 
 #### Create the docker-compose file ####################################
 
 cat > docker-compose.yml <<EOF
-version: '3'
+version: '3.6'
 services:
 EOF
 
@@ -398,47 +377,35 @@ do
     qd=qdata_$n
 
     cat >> docker-compose.yml <<EOF
-  ${consensus}_${service}_$n:
+  node_${consensus}_$n:
     image: $image
-    restart: 'always'
     volumes:
       - './$qd:/qdata'
       - '/etc/localtime:/etc/localtime'
-    user: '$uid:$gid'
-EOF
-    if [ "$use_host_net" = "true" ]; then
-        cat >> docker-compose.yml <<EOF
-    network_mode: "host"
-EOF
-    else
-        cat >> docker-compose.yml <<EOF
     networks:
-      quorum_${consensus}_${service}_net:
+      quorum_net:
         ipv4_address: '$ip'
     ports:
       - $((n+rpc_start_port)):8545
       - $((n+node_start_port)):30303
       - $((n+raft_start_port)):50400
       - $((n+ws_start_port)):8546
-      - $((n+constellation_start_port)):9000
+      - $((n+tessera_start_port)):9081
+    user: '$uid:$gid'
 EOF
-    fi
+
     let n++
 done
 
-if [ ! "$use_host_net" = "true" ]; then
-    cat >> docker-compose.yml <<EOF
-
+cat >> docker-compose.yml <<EOF
 networks:
-  quorum_${consensus}_${service}_net:
+  quorum_net:
     driver: bridge
     ipam:
       driver: default
       config:
       - subnet: $subnet
 EOF
-
-fi
 
 # Start Cluster
 if [[ "$auto_start_containers" = "true" ]]; then

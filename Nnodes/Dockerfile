@@ -1,6 +1,7 @@
-FROM ubuntu:16.04 as builder
 
-ARG CONSTELLATION_VERSION=0.3.5
+#Create image layer pulling QUORUM from git and installing GOLANG
+FROM ubuntu:18.04 as builder 
+
 ARG QUORUM_VERSION=2.3.0
 
 WORKDIR /work
@@ -15,35 +16,42 @@ RUN apt-get update && \
             sysvbanner \
             unzip \
             wget \
-            wrk \
-            zlib1g-dev
+            zlib1g-dev \
+            openjdk-8-jdk \
+            maven 
 
-RUN wget -q https://github.com/jpmorganchase/constellation/releases/download/v0.3.5-build.1/constellation-0.3.5-ubuntu1604.tar.gz && \
-    tar -xvf constellation-$CONSTELLATION_VERSION-ubuntu1604.tar.gz && \
-    cp constellation-node /usr/local/bin && \
-    chmod 0755 /usr/local/bin/constellation-node && \
-    rm -rf constellation-$CONSTELLATION_VERSION-ubuntu1604.tar.gz constellation-node
 
+RUN  git clone https://github.com/wg/wrk.git wrk && \
+    cd wrk && \
+    make && \
+    cd .. && \
+    # move the executable to somewhere in your PATH, ex:
+    mv wrk /usr/local/bin
+
+#Tessera 
+RUN git clone https://github.com/jpmorganchase/tessera.git && \
+    cd tessera && \
+    mvn -DskipTests install && \
+    cd ..
+
+# Golang
 ENV GOREL go1.12.7.linux-amd64.tar.gz
 ENV PATH $PATH:/usr/local/go/bin
 
-RUN wget -q https://storage.googleapis.com/golang/$GOREL && \
+
+RUN wget -q https://dl.google.com/go/${GOREL} && \
     tar xfz $GOREL && \
     mv go /usr/local/go && \
     rm -f $GOREL
 
-#RUN mkdir istanbul && cd istanbul && \
-#    GO111MODULE=on GOPATH=/work/istanbul go get -u github.com/jpmorganchase/istanbul-tools/cmd/istanbul && \
-#    cp bin/istanbul /usr/local/bin && \
-#    cd .. && rm -rf istanbul
-
+# Istanbul tools
 RUN git clone https://github.com/jpmorganchase/istanbul-tools.git istanbul && \
     cd istanbul && \
     make && \
     cp build/bin/istanbul /usr/local/bin/ && \
     cd .. && rm -rf istanbul
-    
 
+#Quorum
 RUN git clone https://github.com/jpmorganchase/quorum.git && \
     cd quorum && \
     git checkout v$QUORUM_VERSION && \
@@ -53,11 +61,11 @@ RUN git clone https://github.com/jpmorganchase/quorum.git && \
     cd .. && \
     rm -rf quorum
 
-### Create the runtime image, leaving most of the cruft behind (hopefully...)
+#-----------------------------------------------------------------
 
-FROM ubuntu:16.04
+# Create final docker image 
+FROM ubuntu:18.04 
 
-# Install add-apt-repository
 RUN apt-get update && \
     apt-get install -y --no-install-recommends software-properties-common && \
     add-apt-repository ppa:ethereum/ethereum && \
@@ -68,23 +76,34 @@ RUN apt-get update && \
         libsodium-dev \
         zlib1g-dev\
         libtinfo-dev \
-        solc && \
+        solc \
+        git \
+        openjdk-8-jdk \
+        maven && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir /.ethereum && \
     chown -R 1000:1000 /.ethereum && \
     groupadd -g 1000 geth && useradd -u 1000 -g 1000 -s /bin/bash geth && \
-    mkdir /home/geth && chown 1000:1000 -R /home/geth
-    
+    mkdir /home/geth && chown 1000:1000 -R /home/geth 
 
-# Temporary useful tools
-#RUN apt-get update && \
-#        apt-get install -y iputils-ping net-tools vim
 
+#RUN  add-apt-repository ppa:ethereum/ethereum 
+
+#RUN  git clone https://github.com/wg/wrk.git wrk && \
+#    cd wrk && \
+#    make && \
+#    cd .. && \
+    # move the executable to somewhere in your PATH, ex:
+#    mv wrk /usr/local/bin
+
+#COPY --from builder /usr/local/bin/wrk /usr/local/bin
+
+COPY --from=builder /work/tessera/tessera-dist/tessera-app/target/tessera-app-*app.jar /tessera/tessera-app.jar
 COPY --from=builder \
-        /usr/local/bin/constellation-node \
         /usr/local/bin/istanbul \
         /usr/local/bin/geth \
         /usr/local/bin/bootnode \
+        /usr/local/bin/wrk \
         /usr/local/bin/
 
 ENV SHELL=/bin/bash
