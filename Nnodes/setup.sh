@@ -157,7 +157,7 @@ master_enodes="$master_enodes)"
 
 echo "]" >> static-nodes.json
 
-echo -e "\n$master_enodes" >> .current_config
+echo -e "\n\n\n$master_enodes" >> .current_config
 
 
 #### Create accounts, keys and genesis.json file #######################
@@ -319,6 +319,7 @@ echo $myline1
 done
 
 
+tessera_keys="tessera_keys=(\n"
 n=1
 for ip in ${ips[*]}
 do
@@ -331,7 +332,8 @@ do
 
     # Generate Quorum-related keys (used by Tessera)
     docker run -u $uid:$gid -v $pwd/$qd:/qdata $image java -jar /tessera/tessera-app.jar -keygen -filename /qdata/keys/tm < /dev/null > /dev/null
-    echo -e "  - ${COLOR_GREEN}Node #$n${COLOR_RESET} public key for Tessera: ${COLOR_YELLOW}`cat $qd/keys/tm.pub`${COLOR_RESET}"
+    pubkey=`cat $qd/keys/tm.pub`
+    echo -e "  - ${COLOR_GREEN}Node #$n${COLOR_RESET} public key for Tessera: ${COLOR_YELLOW}$pubkey${COLOR_RESET}"
 
 
     cat utils/start-node.sh \
@@ -368,8 +370,13 @@ do
 
     fi
 
+    tessera_keys="${tessera_keys}${pubkey}\n"
+
     let n++
 done
+
+tessera_keys="$tessera_keys)"
+echo -e "\n\n$tessera_keys" >> .current_config
 
 rm -rf genesis.json static-nodes.json
 
