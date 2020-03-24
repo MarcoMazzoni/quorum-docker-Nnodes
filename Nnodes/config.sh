@@ -41,6 +41,9 @@ service=n1
 # Send some ether for pre-defined accounts
 alloc_ether=true
 
+#Create deterministic accounts for testing purpose
+fixed_accounts=true
+
 node_name_prefix=master
 auto_start_containers=true
 

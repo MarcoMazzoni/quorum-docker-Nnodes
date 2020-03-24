@@ -192,10 +192,20 @@ for ip in ${ips[*]}
 do
     qd=qdata_$n
 
-    # Generate an Ether account for the node
-    touch $qd/passwords.txt
-    account=`docker run -u $uid:$gid -v $pwd/$qd:/qdata $image /usr/local/bin/geth --datadir=/qdata/dd --password /qdata/passwords.txt account new | cut -c 11-50`
-    printf "  - Account ${COLOR_YELLOW}0x${account}${COLOR_RESET} created on ${COLOR_GREEN}Node #${n}${COLOR_RESET}."
+    # Generate an Ethereum account from the private key (deterministic account -> generates always accounts with the same addresses)
+    # It'll generate as many accounts as keystore files provided (if you provide 5 keystore files, you can't generate more than 5 nodes -> 1 account per node)
+    if [ "$fixed_accounts" = "true" ]; then
+      mkdir -p $qd/dd/keystore
+      cp ./keyfiles/keystore$n/key.prv $qd/dd/keystore/key.prv
+      touch $qd/passwords.txt
+      account=`docker run -u $uid:$gid -v $pwd/$qd:/qdata $image /usr/local/bin/geth --datadir=/qdata/dd --password /qdata/passwords.txt account list | cut -c 14-53`
+      printf "  - Account ${COLOR_YELLOW}0x${account}${COLOR_RESET} imported on ${COLOR_GREEN}Node #${n}${COLOR_RESET}."
+    else
+    # Generate a random Ethereum account for the node
+      touch $qd/passwords.txt
+      account=`docker run -u $uid:$gid -v $pwd/$qd:/qdata $image /usr/local/bin/geth --datadir=/qdata/dd --password /qdata/passwords.txt account new | cut -c 11-50`
+      printf "  - Account ${COLOR_YELLOW}0x${account}${COLOR_RESET} created on ${COLOR_GREEN}Node #${n}${COLOR_RESET}."
+    fi
 
     # If current IP matches (regex) the signer_ip, then add the current created account to the signers account list
     if [[ " ${signer_ips[@]} " =~ " $ip " ]]; then
