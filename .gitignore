@@ -4,3 +4,4 @@ Nnodes/qdata_*
 Nnodes/docker-compose.yml
 Nnodes/static-nodes.json
 Nnodes/genesis.json
+Nnodes/Dockerfile.old

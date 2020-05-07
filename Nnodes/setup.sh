@@ -162,7 +162,7 @@ echo -e "\n\n\n$master_enodes" >> .current_config
 
 #### Create accounts, keys and genesis.json file #######################
 
-echo -e "${COLOR_WHITE}[3] Creating Ether accounts and genesis.json.${COLOR_RESET}"
+echo -e "${COLOR_WHITE}[3] Creating Ethereum accounts and genesis.json.${COLOR_RESET}"
 
 # extraData parameter for IBFT
 istanbul_extra=""
@@ -330,8 +330,14 @@ do
     cp genesis.json $qd/genesis.json
     cp static-nodes.json $qd/dd/static-nodes.json
 
-    # Generate Quorum-related keys (used by Tessera)
-    docker run -u $uid:$gid -v $pwd/$qd:/qdata $image java -jar /tessera/tessera-app.jar -keygen -filename /qdata/keys/tm < /dev/null > /dev/null
+    if [ "$fixed_tessera_keys" = "true" ]; then
+      mkdir -p $qd/keys
+      cp ./keyfiles/keystore$n/tm.key $qd/keys/tm.key
+      cp ./keyfiles/keystore$n/tm.pub $qd/keys/tm.pub
+    else
+      # Generate Quorum-related keys (used by Tessera)
+      docker run -u $uid:$gid -v $pwd/$qd:/qdata $image java -jar /tessera/tessera-app.jar -keygen -filename /qdata/keys/tm < /dev/null > /dev/null
+    fi
     pubkey=`cat $qd/keys/tm.pub`
     echo -e "  - ${COLOR_GREEN}Node #$n${COLOR_RESET} public key for Tessera: ${COLOR_YELLOW}$pubkey${COLOR_RESET}"
 
@@ -345,7 +351,6 @@ do
         | sed "s/{bootnode}/--bootnodes ${bootnode}/g" \
             > $qd/start-node.sh
 
-    #cp utils/start-node.sh $qd/start-node.sh
     chmod 755 $qd/start-node.sh
 
     #Do fullsync and mining on clique signer  
@@ -359,7 +364,7 @@ do
 
     elif [ "${consensus}" = "istanbul" ]; then
 
-      #Block period must > 1 in IBFT
+      #Block period must be > 1 in IBFT
       [[ $block_period < 1 ]] && block_period=1
 
 	    sed -i "s/--raft /--istanbul.blockperiod ${block_period} --syncmode full /g" $qd/start-node.sh
