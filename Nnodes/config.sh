@@ -20,14 +20,20 @@ ws_port=8546
 # VIP Subnet
 subnet="172.13.0.0/16"
 
+# Use docker host network for RLP connection.
+#use_host_net=true
+
+# Interface IP for RLP listening when using docker host network
+#interface_ip="172.16.1.122"
+
 # Total nodes to deploy
 total_nodes=5
 
-# Signer nodes for IBFT
-signer_nodes=5
+# Signer nodes for Clique and IBFT
+signer_nodes=4
 
-# Consensus engine ex. raft, istanbul
-consensus=raft
+# Consensus engine ex. raft, clique, istanbul
+consensus=clique
 
 # Block period for IBFT
 block_period=0
@@ -48,7 +54,7 @@ fixed_accounts=true
 fixed_tessera_keys=true
 
 node_name_prefix=master
-auto_start_containers=false
+auto_start_containers=true
 
 ########################################################################
 

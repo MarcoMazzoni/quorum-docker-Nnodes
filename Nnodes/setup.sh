@@ -126,6 +126,14 @@ echo "[" > static-nodes.json
 n=1
 for ip in ${ips[*]}
 do
+    if [ "$use_host_net" = "true" ]; then
+        ip=$interface_ip
+        rpc_port=$((n+rpc_start_port))
+        raft_port=$((n+raft_start_port))
+        rlp_port=$((n+node_start_port))
+	    ws_port=$((n+node_ws_port))
+    fi
+    
     qd=qdata_$n
 
     # Comma separator for IBFT nodekeys list
@@ -250,6 +258,18 @@ cat >> genesis.json <<EOF
     "eip158Block": 1,
     "byzantiumBlock": 1,
     "constantinopleBlock": 1,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "homesteadBlock": 0,
+    "maxCodeSizeConfig" : [
+      {
+        "block" : 0,
+        "size" : 128
+      }
+    ],
+    "txnSizeLimit": 128,
+    "maxCodeSize": 128,
+    "maxCodeSizeChangeBlock": 0,
 EOF
 
 # Clique
