@@ -27,22 +27,24 @@ subnet="172.13.0.0/16"
 #interface_ip="172.16.1.122"
 
 # Total nodes to deploy
-total_nodes=5
+total_nodes=8
 
 # Signer nodes for Clique and IBFT
 signer_nodes=4
 
 # Consensus engine ex. raft, clique, istanbul
-consensus=clique
+consensus=raft
 
-# Block period for IBFT
-block_period=0
+# Block period for IBFT and Clique in SECONDS
+block_period=1
+# Block time for Raft in MILLISECONDS-> Default 50ms
+raft_block_time=1000
 
 # Docker image name -> quorum-ibft-new, quorum-raft-ibft, quorum-2.5.0
-image=quorum-2.5.0
+image=marcomazzoni/quorum:2.5.0
 
 # Service name for docker-compose.yml
-service=n1
+service=quorum
 
 # Send some ether for pre-defined accounts
 alloc_ether=true
@@ -54,7 +56,7 @@ fixed_accounts=true
 fixed_tessera_keys=true
 
 node_name_prefix=master
-auto_start_containers=true
+auto_start_containers=false
 
 ########################################################################
 

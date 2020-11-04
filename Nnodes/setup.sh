@@ -373,8 +373,12 @@ do
 
     chmod 755 $qd/start-node.sh
 
+    # Set custom raftblocktime when using Raft consensus
+     if [ "${consensus}" = "raft" ]; then
+        sed -i "s/--raft /--raft --raftblocktime ${raft_block_time} /g" $qd/start-node.sh
+
     #Do fullsync and mining on clique signer  
-    if [ "${consensus}" = "clique" ]; then
+    elif [ "${consensus}" = "clique" ]; then
 
         sed -i 's/--raft /--syncmode full /g' $qd/start-node.sh
 
