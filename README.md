@@ -6,7 +6,7 @@
   * Added option for deterministic Ethereum account generation (for testing purpose).
 
 ## Modified by @pccr10001
-  * Add support for Quorum 2.3.0.
+  * Add support for Quorum 2.5.0.
   * Add support for Clique and IBFT consensus engine.
   * Add support for Multi-Cluster.
 
